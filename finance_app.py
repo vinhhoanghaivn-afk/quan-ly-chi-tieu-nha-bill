@@ -4,19 +4,34 @@ import pandas as pd
 import plotly.express as px
 from oauth2client.service_account import ServiceAccountCredentials
 import datetime
+import os
 
 # --- KẾT NỐI ---
 def connect_to_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Kiểm tra xem đang chạy trên Cloud hay Local
-    if "gcp_service_account" in st.secrets:
-        # Chạy trên Cloud: Lấy chìa khóa từ Secrets
-        creds_info = st.secrets["gcp_service_account"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(creds_info), scope)
+    # 1. Ưu tiên kiểm tra file key.json trước (Dùng cho máy Local)
+    if os.path.exists("key.json"):
+        try:
+            creds = ServiceAccountCredentials.from_json_keyfile_name("key.json", scope)
+        except Exception as e:
+            st.error(f"Lỗi khi đọc file key.json: {e}")
+            raise e
+    
+    # 2. Nếu không có file key.json, mới kiểm tra Streamlit Secrets (Dùng cho Cloud)
+    elif "gcp_service_account" in st.secrets:
+        try:
+            creds_info = dict(st.secrets["gcp_service_account"])
+            if "private_key" in creds_info:
+                creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
+        except Exception as e:
+            st.error(f"Lỗi khi đọc Streamlit Secrets: {e}")
+            raise e
+    
     else:
-        # Chạy ở máy sếp: Lấy từ file key.json
-        creds = ServiceAccountCredentials.from_json_keyfile_name("key.json", scope)
+        st.error("Không tìm thấy cấu hình kết nối! (Thiếu key.json hoặc Streamlit Secrets)")
+        st.stop()
         
     client = gspread.authorize(creds)
     return client.open("Quan_Ly_Chi_Tieu_Gia_Dinh").sheet1
