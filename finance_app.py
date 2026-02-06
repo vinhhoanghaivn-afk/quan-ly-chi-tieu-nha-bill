@@ -55,6 +55,60 @@ def lend_dialog(date, amount, note):
         except Exception as e:
             st.error(f"Lỗi: {e}")
 
+# --- POPUP SỬA GIAO DỊCH ---
+@st.dialog("Sửa giao dịch")
+def edit_dialog(row_data, sheet_row_idx, is_transfer=False, sibling_row_idx=None, sibling_data=None):
+    st.write(f"Sếp đang sửa giao dịch tại dòng **{sheet_row_idx}**" + (f" & **{sibling_row_idx}**" if is_transfer else ""))
+    
+    try:
+        current_date = datetime.datetime.strptime(row_data["Ngày"], "%Y-%m-%d").date()
+    except:
+        current_date = datetime.date.today()
+        
+    with st.form("edit_form"):
+        new_date = st.date_input("Ngày", current_date)
+        
+        if not is_transfer:
+            new_acc = st.selectbox("Tài khoản", ["Tiền mặt", "Ngân hàng"], index=["Tiền mặt", "Ngân hàng"].index(row_data["Tài khoản"]) if row_data["Tài khoản"] in ["Tiền mặt", "Ngân hàng"] else 0)
+            cats = ["Thu nhập", "Ăn uống", "Xăng xe", "Chợ búa", "Vợ tiêu", "Cho Bill mượn", "Khác"]
+            new_cat = st.selectbox("Phân loại", cats, index=cats.index(row_data["Loại"]) if row_data["Loại"] in cats else 6)
+        else:
+            st.info(f"Đang sửa cặp chuyển khoản: **{sibling_data['Tài khoản']} → {row_data['Tài khoản']}**")
+            new_acc = row_data["Tài khoản"]
+            new_cat = row_data["Loại"]
+            
+        new_amount = st.number_input("Số tiền ($ AUD)", min_value=0.0, value=float(row_data["Số tiền"]), step=1.0)
+        # Nếu là chuyển khoản, cho phép sửa ghi chú gốc (bỏ phần đuôi tự động)
+        clean_note = row_data["Ghi chú"].split(" từ ")[0] if is_transfer and " từ " in row_data["Ghi chú"] else row_data["Ghi chú"]
+        new_note = st.text_input("Ghi chú", value=clean_note)
+        
+        if st.form_submit_button("Lưu thay đổi", use_container_width=True):
+            try:
+                s = connect_to_sheet()
+                updates = []
+                
+                if not is_transfer:
+                    # Giao dịch đơn
+                    new_row = [str(new_date), new_cat, new_note, new_amount, "Bill", new_acc]
+                    s.update(f"A{sheet_row_idx}:F{sheet_row_idx}", [new_row])
+                else:
+                    # Giao dịch đôi (Chuyển khoản)
+                    # Giữ nguyên logic ghi chú tự động cho chuyển khoản
+                    note_out = f"{new_note} sang {row_data['Tài khoản']}" if new_note else f"Chuyển sang {row_data['Tài khoản']}"
+                    note_in = f"{new_note} từ {sibling_data['Tài khoản']}" if new_note else f"Nhận từ {sibling_data['Tài khoản']}"
+                    
+                    row_out = [str(new_date), sibling_data["Loại"], note_out, new_amount, "Bill", sibling_data["Tài khoản"]]
+                    row_in = [str(new_date), row_data["Loại"], note_in, new_amount, "Bill", row_data["Tài khoản"]]
+                    
+                    # Update cả 2 dòng
+                    s.update(f"A{sibling_row_idx}:F{sibling_row_idx}", [row_out])
+                    s.update(f"A{sheet_row_idx}:F{sheet_row_idx}", [row_in])
+                    
+                st.success("✅ Đã cập nhật thành công!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Lỗi khi cập nhật: {e}")
+
 st.set_page_config(page_title="Tài chính nhà Bill", layout="centered", page_icon="💰")
 
 # --- CUSTOM CSS CHO MOBILE ---
@@ -302,43 +356,85 @@ try:
     with tab5:
         st.subheader("📜 Lịch sử giao dịch")
         if not df_with_balance.empty:
-            # Chỉ hiện 30 giao dịch gần nhất để đảm bảo hiệu năng
-            recent_df = df_with_balance.iloc[::-1].head(30)
+            # Chỉ hiện 30 giao dịch gần nhất
+            recent_df = df_with_balance.iloc[::-1].head(35) # Tăng lên chút vì sẽ gộp dòng
             
             # Header giả cho bảng
-            h1, h2, h3, h4 = st.columns([2, 2, 2, 1])
-            h1.caption("**Ngày/Tài khoản**")
-            h2.caption("**Loại/Số tiền**")
-            h3.caption("**Số dư sau đó**")
-            h4.caption("**Xóa**")
+            h1, h2, h3, h4, h5 = st.columns([2, 2, 2, 0.6, 0.6])
+            h1.caption("**Ngày/TK**")
+            h2.caption("**Loại/$**")
+            h3.caption("**Số dư**")
+            h4.caption("**Sửa**")
+            h5.caption("**Xóa**")
             
             st.divider()
 
-            for idx, row in recent_df.iterrows():
-                # Tính row index chuẩn trong Google Sheet (1-indexed, +1 cho header)
+            skip_next = False
+            for i in range(len(recent_df)):
+                if skip_next:
+                    skip_next = False
+                    continue
+                
+                row = recent_df.iloc[i]
+                idx = recent_df.index[i]
                 sheet_row_idx = int(idx) + 2
                 
-                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                # Logic Gộp: Nếu dòng hiện tại là "Chuyển tiền (Vào)" và dòng tiếp theo là "Chuyển tiền (Ra)" (vì đã đảo ngược iloc[::-1])
+                # Thực tế: Trong Sheet, Ra (index n) thường ở trước Vào (index n+1). 
+                # Khi đảo ngược: n+1 (Vào) sẽ ở trên n (Ra).
+                is_merged = False
+                display_cat = row['Loại']
+                display_acc = row['Tài khoản']
+                display_note = row['Ghi chú']
+                delete_indices = [sheet_row_idx]
+                
+                if i + 1 < len(recent_df):
+                    next_row = recent_df.iloc[i+1]
+                    # Nếu dòng hiện tại là Vào và dòng sau là Ra, và cùng số tiền, cùng ghi chú cơ bản
+                    if row['Loại'] == "Chuyển tiền (Vào)" and next_row['Loại'] == "Chuyển tiền (Ra)" and abs(row['Số tiền'] - next_row['Số tiền']) < 0.01:
+                        is_merged = True
+                        skip_next = True
+                        display_cat = "Chuyển tiền"
+                        display_acc = f"{next_row['Tài khoản']} ➔ {row['Tài khoản']}"
+                        # Làm sạch ghi chú: bỏ phần "từ..." hoặc "sang..." tự động
+                        display_note = row['Ghi chú'].split(" từ ")[0] if " từ " in row['Ghi chú'] else row['Ghi chú']
+                        delete_indices = [sheet_row_idx, int(recent_df.index[i+1]) + 2]
+
+                c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 0.6, 0.6])
                 
                 # Cột 1: Ngày & Tài khoản
                 c1.write(f"{row['Ngày']}")
-                c1.caption(f"{row['Tài khoản']}")
+                c1.caption(f"{display_acc}")
                 
                 # Cột 2: Loại & Số tiền
-                color = "green" if row['Loại'] in ["Thu nhập", "Chuyển tiền (Vào)"] else "red"
-                c2.write(f"{row['Loại']}")
-                c2.markdown(f"<span style='color:{color}; font-weight:bold;'>${row['Số tiền']:,.0f}</span>", unsafe_allow_html=True)
+                color = "green" if row['Loại'] in ["Thu nhập", "Thu nhập (DoorDash)", "Chuyển tiền (Vào)"] else "red"
+                if is_merged: color = "#3182ce" # Màu xanh dương cho chuyển khoản
                 
-                # Cột 3: Số dư (hiện TM và NH cho gọn)
-                c3.caption(f"TM: {row['Dư TM']:,.0f}")
-                c3.caption(f"NH: {row['Dư NH']:,.0f}")
-                c3.caption(f"Nợ: {row['Dư Nợ']:,.0f}")
+                c2.write(f"{display_cat}")
+                if display_note:
+                    c2.caption(f"{display_note}")
+                c2.markdown(f"<span style='color:{color}; font-weight:bold;'>${row['Số tiền']:,.2f}</span>", unsafe_allow_html=True)
                 
-                # Cột 4: Nút xóa
-                if c4.button("❌", key=f"del_{sheet_row_idx}"):
+                # Cột 3: Số dư (Lấy từ dòng "Vào" - dòng mới nhất trong cặp)
+                c3.caption(f"TM: {row['Dư TM']:,.2f}")
+                c3.caption(f"NH: {row['Dư NH']:,.2f}")
+                c3.caption(f"Nợ: {row['Dư Nợ']:,.2f}")
+                
+                # Cột 4: Nút Sửa
+                if c4.button("✏️", key=f"edit_{sheet_row_idx}"):
+                    if not is_merged:
+                        edit_dialog(row, sheet_row_idx)
+                    else:
+                        sibling_idx = int(recent_df.index[i+1]) + 2
+                        edit_dialog(row, sheet_row_idx, is_transfer=True, sibling_row_idx=sibling_idx, sibling_data=recent_df.iloc[i+1])
+
+                # Cột 5: Nút xóa
+                if c5.button("❌", key=f"del_{sheet_row_idx}"):
                     try:
-                        sheet.delete_rows(sheet_row_idx)
-                        st.success(f"Đã xóa dòng {sheet_row_idx}!")
+                        # Xóa từ dòng lớn đến dòng nhỏ để không bị lệch index
+                        for d_idx in sorted(delete_indices, reverse=True):
+                            sheet.delete_rows(d_idx)
+                        st.success(f"Đã xóa thành công!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Lỗi khi xóa: {e}")
