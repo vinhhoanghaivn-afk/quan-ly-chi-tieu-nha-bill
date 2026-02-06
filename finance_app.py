@@ -273,7 +273,7 @@ try:
         
     # Giao diện Progress Bar gọn gàng cho Mobile
     with st.container():
-        st.write(f"🏁 **Tiết kiệm: {progress_per*100:.1f}%** (${current_savings:,.0f}/${saving_goal:,.0f})")
+        st.write(f"🏁 **Tiết kiệm: {progress_per*100:.1f}%** (\${current_savings:,.2f} / \${saving_goal:,.2f})")
         st.progress(progress_per)
     
     st.divider()
@@ -282,7 +282,7 @@ try:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Tổng", "🍰 Biểu đồ", "📝 Nhập", "💸 Chuyển", "📜 Lịch sử"])
 
     with tab1:
-        st.subheader("📊 Số dư hiện có")
+        st.subheader(f"📊 Số dư hiện có: \${current_savings:,.2f}")
         # Metric sẽ tự stack dọc trên Mobile
         m1, m2, m3 = st.columns(3)
         m1.metric("💵 Tiền mặt", f"${bal_cash:,.2f}")
