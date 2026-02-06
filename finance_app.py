@@ -9,18 +9,15 @@ import datetime
 def connect_to_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Thử lấy từ key.json (dùng local)
-    try:
+    # Kiểm tra xem đang chạy trên Cloud hay Local
+    if "gcp_service_account" in st.secrets:
+        # Chạy trên Cloud: Lấy chìa khóa từ Secrets
+        creds_info = st.secrets["gcp_service_account"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(creds_info), scope)
+    else:
+        # Chạy ở máy sếp: Lấy từ file key.json
         creds = ServiceAccountCredentials.from_json_keyfile_name("key.json", scope)
-    except Exception:
-        # Nếu không có file (khi deploy), thử lấy từ Streamlit Secrets
-        try:
-            creds_dict = st.secrets["gcp_service_account"]
-            creds = ServiceAccountCredentials.from_json_dict(creds_dict, scope)
-        except Exception as e:
-            st.error("Không tìm thấy cấu hình key.json hoặc Streamlit Secrets!")
-            raise e
-            
+        
     client = gspread.authorize(creds)
     return client.open("Quan_Ly_Chi_Tieu_Gia_Dinh").sheet1
 
