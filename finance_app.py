@@ -354,33 +354,62 @@ try:
                     st.rerun()
 
         with tab4:
-            st.subheader(f"💸 Chuyển khoản nội bộ ({current_user})")
+            # Chỉnh sửa tên hiển thị cho tab Chuyển
+            transfer_title = view_mode.replace("Tài khoản", "").replace("Tài Khoản", "").strip()
+            st.subheader(f"💸 Chuyển khoản ({transfer_title})")
+            
             with st.form("transfer_form", clear_on_submit=True):
                 t_date = st.date_input("Ngày chuyển", datetime.date.today())
                 
+                # Nguồn
                 accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
                 acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
-                
                 from_acc_display = st.selectbox("Từ tài khoản", acc_options)
-                to_acc_display = st.selectbox("Đến tài khoản", acc_options)
+                
+                st.markdown("---")
+                # Đích - Cho chọn đích đến là của ai
+                to_user_modes = ["Chung", "Bill", "Tracy"]
+                # Mặc định là tài khoản hiện tại
+                default_to_idx = to_user_modes.index(transfer_title) if transfer_title in to_user_modes else 0
+                to_user_name = st.selectbox("Đích đến là tài khoản của:", to_user_modes, index=default_to_idx)
+                
+                # Nhãn debt_label cho đích đến (vì người nhận có thể có nhãn khác)
+                to_debt_label = "Nợ Afterpay" if to_user_name in ["Bill", "Tracy"] else "Tiền nợ"
+                to_acc_options = ["Tiền mặt", "Ngân hàng", to_debt_label]
+                to_acc_display = st.selectbox("Đến tài khoản", to_acc_options)
+                
                 t_amount = st.number_input("Số tiền chuyển ($ AUD)", min_value=0.0, step=1.0)
                 t_note = st.text_input("Ghi chú chuyển tiền")
                 t_submitted = st.form_submit_button("Xác nhận chuyển", use_container_width=True)
                 
             if t_submitted and t_amount > 0:
-                if from_acc_display == to_acc_display:
+                # Map lại giá trị thực
+                from_acc = accounts[acc_options.index(from_acc_display)]
+                to_acc = accounts[to_acc_options.index(to_acc_display)]
+                
+                # Map user đích sang định danh chuẩn
+                to_user_map = {"Chung": "Bill", "Bill": "Bill_P", "Tracy": "Tracy"}
+                target_user = to_user_map[to_user_name]
+                
+                if current_user == target_user and from_acc == to_acc:
                     st.warning("Tài khoản nguồn và đích phải khác nhau!")
                 else:
                     try:
-                        spender = current_user
-                        from_acc = accounts[acc_options.index(from_acc_display)]
-                        to_acc = accounts[acc_options.index(to_acc_display)]
-                        
                         transfer_note = f"[Chuyển tiền] {t_note}" if t_note else "[Chuyển tiền]"
-                        row_out = [str(t_date), "Chuyển tiền (Ra)", f"{transfer_note} sang {to_acc}", t_amount, spender, from_acc]
-                        row_in = [str(t_date), "Chuyển tiền (Vào)", f"{transfer_note} từ {from_acc}", t_amount, spender, to_acc]
+                        
+                        # Làm đẹp ghi chú nếu chuyển liên tài khoản
+                        note_out = f"{transfer_note} sang {to_acc}"
+                        note_in = f"{transfer_note} từ {from_acc}"
+                        
+                        if current_user != target_user:
+                            note_out += f" ({to_user_name})"
+                            note_in += f" ({transfer_title})"
+                            
+                        row_out = [str(t_date), "Chuyển tiền (Ra)", note_out, t_amount, current_user, from_acc]
+                        row_in = [str(t_date), "Chuyển tiền (Vào)", note_in, t_amount, target_user, to_acc]
+                        
                         sheet.append_rows([row_out, row_in])
-                        st.success("✅ Đã chuyển thành công!")
+                        st.success(f"✅ Đã chuyển từ {transfer_title} sang {to_user_name} thành công!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Lỗi: {e}")
