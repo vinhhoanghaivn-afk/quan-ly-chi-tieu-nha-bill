@@ -140,8 +140,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💰 Tài Chính")
-view_mode = st.selectbox("Chọn tài khoản quản lý", ["Tài chính Nhà Bill", "Tài khoản Bill", "Tài khoản Tracy"])
+st.title("💰 Quản Lý Tài Chính")
+view_mode = st.selectbox("Chọn tài khoản quản lý", ["Tài chính Nhà Bill (Chung)", "Tài khoản Bill", "Tài khoản Tracy", "Tổng hợp (Tất cả)"])
 
 # Thiết lập vai trò và nhãn tiền nợ
 if view_mode == "Tài khoản Bill":
@@ -150,9 +150,12 @@ if view_mode == "Tài khoản Bill":
 elif view_mode == "Tài khoản Tracy":
     current_user = "Tracy"
     debt_label = "Nợ Afterpay"
-else:
-    current_user = None # Phế tổng quát
+elif view_mode == "Tài chính Nhà Bill (Chung)":
+    current_user = "Chung"
     debt_label = "Tiền nợ"
+else: # Tổng hợp
+    current_user = "All"
+    debt_label = "Tiền nợ/Afterpay"
 
 try:
     sheet = connect_to_sheet()
@@ -211,7 +214,8 @@ try:
             df["Số tiền"] = df["Số tiền"].apply(clean_money)
             
             # --- LỌC DỮ LIỆU THEO VIEW_MODE ---
-            if current_user:
+            if current_user != "All":
+                # Nếu lọc theo người cụ thể
                 df = df[df["Người chi"] == current_user]
             
         else:
@@ -321,61 +325,67 @@ try:
             st.info("Chưa có dữ liệu.")
 
     with tab3:
-        with st.form("input_form", clear_on_submit=True):
-            st.subheader("📝 Nhập giao dịch")
-            date = st.date_input("Ngày", datetime.date.today())
-            
-            # Xử lý nhãn hiển thị tài khoản
-            accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
-            acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
-            acc_display = st.selectbox("Tài khoản", acc_options)
-            acc_real = accounts[acc_options.index(acc_display)]
-            
-            category = st.selectbox("Phân loại", ["Thu nhập", "Ăn uống", "Xăng xe", "Chợ búa", "Vợ tiêu", "Cho Bill mượn", "Khác"])
-            amount = st.number_input("Số tiền ($ AUD)", min_value=0.0, step=1.0)
-            note = st.text_input("Ghi chú")
-            submitted = st.form_submit_button("Lưu dữ liệu", use_container_width=True)
+        if current_user == "All":
+            st.warning("⚠️ Vui lòng chọn tài khoản cụ thể (Bill, Tracy hoặc Chung) để nhập giao dịch.")
+        else:
+            with st.form("input_form", clear_on_submit=True):
+                st.subheader(f"📝 Nhập cho: {view_mode}")
+                date = st.date_input("Ngày", datetime.date.today())
+                
+                # Xử lý nhãn hiển thị tài khoản
+                accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
+                acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
+                acc_display = st.selectbox("Tài khoản", acc_options)
+                acc_real = accounts[acc_options.index(acc_display)]
+                
+                category = st.selectbox("Phân loại", ["Thu nhập", "Ăn uống", "Xăng xe", "Chợ búa", "Vợ tiêu", "Cho Bill mượn", "Khác"])
+                amount = st.number_input("Số tiền ($ AUD)", min_value=0.0, step=1.0)
+                note = st.text_input("Ghi chú")
+                submitted = st.form_submit_button("Lưu dữ liệu", use_container_width=True)
 
-        if submitted and amount > 0:
-            spender = current_user if current_user else "Bill"
-            if category == "Cho Bill mượn":
-                lend_dialog(date, amount, note, spender)
-            else:
-                sheet.append_row([str(date), category, note, amount, spender, acc_real])
-                st.success("✅ Đã lưu thành công!")
-                st.rerun()
+            if submitted and amount > 0:
+                spender = current_user
+                if category == "Cho Bill mượn":
+                    lend_dialog(date, amount, note, spender)
+                else:
+                    sheet.append_row([str(date), category, note, amount, spender, acc_real])
+                    st.success("✅ Đã lưu thành công!")
+                    st.rerun()
 
     with tab4:
-        st.subheader("💸 Chuyển khoản nội bộ")
-        with st.form("transfer_form", clear_on_submit=True):
-            t_date = st.date_input("Ngày chuyển", datetime.date.today())
-            
-            accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
-            acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
-            
-            from_acc_display = st.selectbox("Từ tài khoản", acc_options)
-            to_acc_display = st.selectbox("Đến tài khoản", acc_options)
-            t_amount = st.number_input("Số tiền chuyển ($ AUD)", min_value=0.0, step=1.0)
-            t_note = st.text_input("Ghi chú chuyển tiền")
-            t_submitted = st.form_submit_button("Xác nhận chuyển", use_container_width=True)
-            
-        if t_submitted and t_amount > 0:
-            if from_acc_display == to_acc_display:
-                st.warning("Tài khoản nguồn và đích phải khác nhau!")
-            else:
-                try:
-                    spender = current_user if current_user else "Bill"
-                    from_acc = accounts[acc_options.index(from_acc_display)]
-                    to_acc = accounts[acc_options.index(to_acc_display)]
-                    
-                    transfer_note = f"[Chuyển tiền] {t_note}" if t_note else "[Chuyển tiền]"
-                    row_out = [str(t_date), "Chuyển tiền (Ra)", f"{transfer_note} sang {to_acc}", t_amount, spender, from_acc]
-                    row_in = [str(t_date), "Chuyển tiền (Vào)", f"{transfer_note} từ {from_acc}", t_amount, spender, to_acc]
-                    sheet.append_rows([row_out, row_in])
-                    st.success("✅ Đã chuyển thành công!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Lỗi: {e}")
+        if current_user == "All":
+            st.warning("⚠️ Vui lòng chọn tài khoản cụ thể để thực hiện chuyển khoản.")
+        else:
+            st.subheader(f"💸 Chuyển khoản nội bộ ({current_user})")
+            with st.form("transfer_form", clear_on_submit=True):
+                t_date = st.date_input("Ngày chuyển", datetime.date.today())
+                
+                accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
+                acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
+                
+                from_acc_display = st.selectbox("Từ tài khoản", acc_options)
+                to_acc_display = st.selectbox("Đến tài khoản", acc_options)
+                t_amount = st.number_input("Số tiền chuyển ($ AUD)", min_value=0.0, step=1.0)
+                t_note = st.text_input("Ghi chú chuyển tiền")
+                t_submitted = st.form_submit_button("Xác nhận chuyển", use_container_width=True)
+                
+            if t_submitted and t_amount > 0:
+                if from_acc_display == to_acc_display:
+                    st.warning("Tài khoản nguồn và đích phải khác nhau!")
+                else:
+                    try:
+                        spender = current_user
+                        from_acc = accounts[acc_options.index(from_acc_display)]
+                        to_acc = accounts[acc_options.index(to_acc_display)]
+                        
+                        transfer_note = f"[Chuyển tiền] {t_note}" if t_note else "[Chuyển tiền]"
+                        row_out = [str(t_date), "Chuyển tiền (Ra)", f"{transfer_note} sang {to_acc}", t_amount, spender, from_acc]
+                        row_in = [str(t_date), "Chuyển tiền (Vào)", f"{transfer_note} từ {from_acc}", t_amount, spender, to_acc]
+                        sheet.append_rows([row_out, row_in])
+                        st.success("✅ Đã chuyển thành công!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Lỗi: {e}")
 
     with tab5:
         st.subheader("📜 Lịch sử giao dịch")
