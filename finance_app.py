@@ -141,18 +141,18 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("💰 Quản Lý Tài Chính")
-view_mode = st.selectbox("Chọn tài khoản quản lý", ["Tài chính Nhà Bill (Chung)", "Tài khoản Bill", "Tài khoản Tracy", "Tổng hợp (Tất cả)"])
+view_mode = st.selectbox("Chọn tài khoản quản lý", ["Tài Khoản Chung", "Tài khoản Bill", "Tài khoản Tracy", "Tổng hợp (Tất cả)"])
 
 # Thiết lập vai trò và nhãn tiền nợ
-if view_mode == "Tài khoản Bill":
-    current_user = "Bill"
+if view_mode == "Tài Khoản Chung":
+    current_user = "Bill" # Dùng 'Bill' cho Chung vì toàn bộ data cũ đang mang tên này
+    debt_label = "Tiền nợ"
+elif view_mode == "Tài khoản Bill":
+    current_user = "Bill_P" # Định danh mới cho tài khoản riêng (để bắt đầu từ 0)
     debt_label = "Nợ Afterpay"
 elif view_mode == "Tài khoản Tracy":
     current_user = "Tracy"
     debt_label = "Nợ Afterpay"
-elif view_mode == "Tài chính Nhà Bill (Chung)":
-    current_user = "Chung"
-    debt_label = "Tiền nợ"
 else: # Tổng hợp
     current_user = "All"
     debt_label = "Tiền nợ/Afterpay"
