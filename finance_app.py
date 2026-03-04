@@ -296,7 +296,10 @@ try:
     st.divider()
 
     # --- GIAO DIỆN TABS ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Tổng", "🍰 Biểu đồ", "📝 Nhập", "💸 Chuyển", "📜 Lịch sử"])
+    if current_user == "All":
+        tab1, tab2, tab5 = st.tabs(["📊 Tổng", "🍰 Biểu đồ", "📜 Lịch sử"])
+    else:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Tổng", "🍰 Biểu đồ", "📝 Nhập", "💸 Chuyển", "📜 Lịch sử"])
 
     with tab1:
         st.subheader(f"📊 Số dư hiện có: \${current_savings:,.2f}")
