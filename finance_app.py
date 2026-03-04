@@ -69,7 +69,8 @@ def edit_dialog(row_data, sheet_row_idx, is_transfer=False, sibling_row_idx=None
         new_date = st.date_input("Ngày", current_date)
         
         if not is_transfer:
-            new_acc = st.selectbox("Tài khoản", ["Tiền mặt", "Ngân hàng"], index=["Tiền mặt", "Ngân hàng"].index(row_data["Tài khoản"]) if row_data["Tài khoản"] in ["Tiền mặt", "Ngân hàng"] else 0)
+            accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
+            new_acc = st.selectbox("Tài khoản", accounts, index=accounts.index(row_data["Tài khoản"]) if row_data["Tài khoản"] in accounts else 0)
             cats = ["Thu nhập", "Ăn uống", "Xăng xe", "Chợ búa", "Vợ tiêu", "Cho Bill mượn", "Khác"]
             new_cat = st.selectbox("Phân loại", cats, index=cats.index(row_data["Loại"]) if row_data["Loại"] in cats else 6)
         else:
@@ -312,7 +313,7 @@ try:
             st.subheader("📝 Nhập giao dịch")
             # Stack các trường nhập liệu cho mobile
             date = st.date_input("Ngày", datetime.date.today())
-            acc = st.selectbox("Tài khoản", ["Tiền mặt", "Ngân hàng"])
+            acc = st.selectbox("Tài khoản", ["Tiền mặt", "Ngân hàng", "Tiền nợ"])
             category = st.selectbox("Phân loại", ["Thu nhập", "Ăn uống", "Xăng xe", "Chợ búa", "Vợ tiêu", "Cho Bill mượn", "Khác"])
             amount = st.number_input("Số tiền ($ AUD)", min_value=0.0, step=1.0)
             note = st.text_input("Ghi chú")
@@ -332,8 +333,8 @@ try:
         st.subheader("💸 Chuyển khoản nội bộ")
         with st.form("transfer_form", clear_on_submit=True):
             t_date = st.date_input("Ngày chuyển", datetime.date.today())
-            from_acc = st.selectbox("Từ tài khoản", ["Tiền mặt", "Ngân hàng"])
-            to_acc = st.selectbox("Đến tài khoản", ["Tiền mặt", "Ngân hàng"])
+            from_acc = st.selectbox("Từ tài khoản", ["Tiền mặt", "Ngân hàng", "Tiền nợ"])
+            to_acc = st.selectbox("Đến tài khoản", ["Tiền mặt", "Ngân hàng", "Tiền nợ"])
             t_amount = st.number_input("Số tiền chuyển ($ AUD)", min_value=0.0, step=1.0)
             t_note = st.text_input("Ghi chú chuyển tiền")
                 
