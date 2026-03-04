@@ -36,29 +36,29 @@ def connect_to_sheet():
     client = gspread.authorize(creds)
     return client.open("Quan_Ly_Chi_Tieu_Gia_Dinh").sheet1
 
-# --- POPUP CHO BILL MƯỢN ---
+# --- POPUP CHO MƯỢN ---
 @st.dialog("Nguồn tiền cho mượn")
-def lend_dialog(date, amount, note):
-    st.write(f"Sếp đang cho mượn **{amount:,.2f} AUD**. Mượn từ đâu vậy sếp?")
+def lend_dialog(date, amount, note, current_user):
+    user_display = "Sếp" if current_user == "Bill" else current_user
+    st.write(f"{user_display} đang cho mượn **{amount:,.2f} AUD**. Mượn từ đâu vậy?")
     source = st.selectbox("Chọn tài khoản nguồn", ["Tiền mặt", "Ngân hàng"])
     if st.button("Xác nhận cho mượn"):
         try:
-            # Kết nối lại để thao tác
             s = connect_to_sheet()
-            transfer_note = f"[Bill mượn] {note}" if note else "[Bill mượn]"
-            # Tạo 2 dòng transfer giống logic chuyển tiền
-            row_out = [str(date), "Chuyển tiền (Ra)", f"{transfer_note} sang Tiền nợ", amount, "Bill", source]
-            row_in = [str(date), "Chuyển tiền (Vào)", f"{transfer_note} từ {source}", amount, "Bill", "Tiền nợ"]
+            transfer_note = f"[Cho mượn] {note}" if note else "[Cho mượn]"
+            # Tạo 2 dòng transfer
+            row_out = [str(date), "Chuyển tiền (Ra)", f"{transfer_note} sang Tiền nợ", amount, current_user, source]
+            row_in = [str(date), "Chuyển tiền (Vào)", f"{transfer_note} từ {source}", amount, current_user, "Tiền nợ"]
             s.append_rows([row_out, row_in])
-            st.success("✅ Đã ghi nhận Bill mượn tiền!")
+            st.success(f"✅ Đã ghi nhận {current_user} mượn tiền!")
             st.rerun()
         except Exception as e:
             st.error(f"Lỗi: {e}")
 
 # --- POPUP SỬA GIAO DỊCH ---
 @st.dialog("Sửa giao dịch")
-def edit_dialog(row_data, sheet_row_idx, is_transfer=False, sibling_row_idx=None, sibling_data=None):
-    st.write(f"Sếp đang sửa giao dịch tại dòng **{sheet_row_idx}**" + (f" & **{sibling_row_idx}**" if is_transfer else ""))
+def edit_dialog(row_data, sheet_row_idx, current_user, debt_label, is_transfer=False, sibling_row_idx=None, sibling_data=None):
+    st.write(f"Đang sửa giao dịch của **{row_data['Người chi']}** tại dòng **{sheet_row_idx}**" + (f" & **{sibling_row_idx}**" if is_transfer else ""))
     
     try:
         current_date = datetime.datetime.strptime(row_data["Ngày"], "%Y-%m-%d").date()
@@ -70,45 +70,43 @@ def edit_dialog(row_data, sheet_row_idx, is_transfer=False, sibling_row_idx=None
         
         if not is_transfer:
             accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
-            new_acc = st.selectbox("Tài khoản", accounts, index=accounts.index(row_data["Tài khoản"]) if row_data["Tài khoản"] in accounts else 0)
+            # Hiển thị nhãn debt_label cho Tiền nợ
+            acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
+            idx_acc = accounts.index(row_data["Tài khoản"]) if row_data["Tài khoản"] in accounts else 0
+            new_acc_display = st.selectbox("Tài khoản", acc_options, index=idx_acc)
+            new_acc = accounts[acc_options.index(new_acc_display)]
+            
             cats = ["Thu nhập", "Ăn uống", "Xăng xe", "Chợ búa", "Vợ tiêu", "Cho Bill mượn", "Khác"]
             new_cat = st.selectbox("Phân loại", cats, index=cats.index(row_data["Loại"]) if row_data["Loại"] in cats else 6)
         else:
-            st.info(f"Đang sửa cặp chuyển khoản: **{sibling_data['Tài khoản']} → {row_data['Tài khoản']}**")
+            st.info(f"Chuyển khoản: **{sibling_data['Tài khoản']} → {row_data['Tài khoản']}**")
             new_acc = row_data["Tài khoản"]
             new_cat = row_data["Loại"]
             
         new_amount = st.number_input("Số tiền ($ AUD)", min_value=0.0, value=float(row_data["Số tiền"]), step=1.0)
-        # Nếu là chuyển khoản, cho phép sửa ghi chú gốc (bỏ phần đuôi tự động)
         clean_note = row_data["Ghi chú"].split(" từ ")[0] if is_transfer and " từ " in row_data["Ghi chú"] else row_data["Ghi chú"]
         new_note = st.text_input("Ghi chú", value=clean_note)
         
         if st.form_submit_button("Lưu thay đổi", use_container_width=True):
             try:
                 s = connect_to_sheet()
-                updates = []
-                
                 if not is_transfer:
-                    # Giao dịch đơn
-                    new_row = [str(new_date), new_cat, new_note, new_amount, "Bill", new_acc]
+                    new_row = [str(new_date), new_cat, new_note, new_amount, row_data["Người chi"], new_acc]
                     s.update(f"A{sheet_row_idx}:F{sheet_row_idx}", [new_row])
                 else:
-                    # Giao dịch đôi (Chuyển khoản)
-                    # Giữ nguyên logic ghi chú tự động cho chuyển khoản
                     note_out = f"{new_note} sang {row_data['Tài khoản']}" if new_note else f"Chuyển sang {row_data['Tài khoản']}"
                     note_in = f"{new_note} từ {sibling_data['Tài khoản']}" if new_note else f"Nhận từ {sibling_data['Tài khoản']}"
                     
-                    row_out = [str(new_date), sibling_data["Loại"], note_out, new_amount, "Bill", sibling_data["Tài khoản"]]
-                    row_in = [str(new_date), row_data["Loại"], note_in, new_amount, "Bill", row_data["Tài khoản"]]
+                    row_out = [str(new_date), sibling_data["Loại"], note_out, new_amount, row_data["Người chi"], sibling_data["Tài khoản"]]
+                    row_in = [str(new_date), row_data["Loại"], note_in, new_amount, row_data["Người chi"], row_data["Tài khoản"]]
                     
-                    # Update cả 2 dòng
                     s.update(f"A{sibling_row_idx}:F{sibling_row_idx}", [row_out])
                     s.update(f"A{sheet_row_idx}:F{sheet_row_idx}", [row_in])
                     
-                st.success("✅ Đã cập nhật thành công!")
+                st.success("✅ Đã cập nhật!")
                 st.rerun()
             except Exception as e:
-                st.error(f"Lỗi khi cập nhật: {e}")
+                st.error(f"Lỗi: {e}")
 
 st.set_page_config(page_title="Tài chính nhà Bill", layout="centered", page_icon="💰")
 
@@ -142,7 +140,19 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💰 Tài Chính Nhà Bill")
+st.title("💰 Tài Chính")
+view_mode = st.selectbox("Chọn tài khoản quản lý", ["Tài chính Nhà Bill", "Tài khoản Bill", "Tài khoản Tracy"])
+
+# Thiết lập vai trò và nhãn tiền nợ
+if view_mode == "Tài khoản Bill":
+    current_user = "Bill"
+    debt_label = "Nợ Afterpay"
+elif view_mode == "Tài khoản Tracy":
+    current_user = "Tracy"
+    debt_label = "Nợ Afterpay"
+else:
+    current_user = None # Phế tổng quát
+    debt_label = "Tiền nợ"
 
 try:
     sheet = connect_to_sheet()
@@ -190,17 +200,19 @@ try:
                 # Cắt bớt nếu thừa
                 normalized_data.append(current_row[:max_len])
                 
+            # Tạo df gốc
             df = pd.DataFrame(normalized_data, columns=Expected_Headers)
             
-            # Convert cột Số tiền sang số (xử lý remove dấu $ hoặc , nếu có)
-            # Vì gspread trả về string toàn bộ
-            # Hàm clean tiền:
             def clean_money(val):
                 if isinstance(val, (int, float)): return float(val)
                 if not val: return 0.0
                 return float(str(val).replace(",", "").replace("$", ""))
                 
             df["Số tiền"] = df["Số tiền"].apply(clean_money)
+            
+            # --- LỌC DỮ LIỆU THEO VIEW_MODE ---
+            if current_user:
+                df = df[df["Người chi"] == current_user]
             
         else:
             df = pd.DataFrame(columns=Expected_Headers)
@@ -288,7 +300,7 @@ try:
         m1, m2, m3 = st.columns(3)
         m1.metric("💵 Tiền mặt", f"${bal_cash:,.2f}")
         m2.metric("🏦 Ngân hàng", f"${bal_bank:,.2f}")
-        m3.metric("📉 Tiền nợ", f"${bal_debt:,.2f}", delta_color="inverse")
+        m3.metric(f"📉 {debt_label}", f"${bal_debt:,.2f}", delta_color="inverse")
 
     with tab2:
         if not df.empty:
@@ -311,21 +323,25 @@ try:
     with tab3:
         with st.form("input_form", clear_on_submit=True):
             st.subheader("📝 Nhập giao dịch")
-            # Stack các trường nhập liệu cho mobile
             date = st.date_input("Ngày", datetime.date.today())
-            acc = st.selectbox("Tài khoản", ["Tiền mặt", "Ngân hàng", "Tiền nợ"])
+            
+            # Xử lý nhãn hiển thị tài khoản
+            accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
+            acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
+            acc_display = st.selectbox("Tài khoản", acc_options)
+            acc_real = accounts[acc_options.index(acc_display)]
+            
             category = st.selectbox("Phân loại", ["Thu nhập", "Ăn uống", "Xăng xe", "Chợ búa", "Vợ tiêu", "Cho Bill mượn", "Khác"])
             amount = st.number_input("Số tiền ($ AUD)", min_value=0.0, step=1.0)
             note = st.text_input("Ghi chú")
-            
             submitted = st.form_submit_button("Lưu dữ liệu", use_container_width=True)
 
         if submitted and amount > 0:
+            spender = current_user if current_user else "Bill"
             if category == "Cho Bill mượn":
-                lend_dialog(date, amount, note)
+                lend_dialog(date, amount, note, spender)
             else:
-                # Ghi thêm cột Tài khoản vào Google Sheets
-                sheet.append_row([str(date), category, note, amount, "Bill", acc])
+                sheet.append_row([str(date), category, note, amount, spender, acc_real])
                 st.success("✅ Đã lưu thành công!")
                 st.rerun()
 
@@ -333,21 +349,28 @@ try:
         st.subheader("💸 Chuyển khoản nội bộ")
         with st.form("transfer_form", clear_on_submit=True):
             t_date = st.date_input("Ngày chuyển", datetime.date.today())
-            from_acc = st.selectbox("Từ tài khoản", ["Tiền mặt", "Ngân hàng", "Tiền nợ"])
-            to_acc = st.selectbox("Đến tài khoản", ["Tiền mặt", "Ngân hàng", "Tiền nợ"])
+            
+            accounts = ["Tiền mặt", "Ngân hàng", "Tiền nợ"]
+            acc_options = ["Tiền mặt", "Ngân hàng", debt_label]
+            
+            from_acc_display = st.selectbox("Từ tài khoản", acc_options)
+            to_acc_display = st.selectbox("Đến tài khoản", acc_options)
             t_amount = st.number_input("Số tiền chuyển ($ AUD)", min_value=0.0, step=1.0)
             t_note = st.text_input("Ghi chú chuyển tiền")
-                
             t_submitted = st.form_submit_button("Xác nhận chuyển", use_container_width=True)
             
         if t_submitted and t_amount > 0:
-            if from_acc == to_acc:
+            if from_acc_display == to_acc_display:
                 st.warning("Tài khoản nguồn và đích phải khác nhau!")
             else:
                 try:
+                    spender = current_user if current_user else "Bill"
+                    from_acc = accounts[acc_options.index(from_acc_display)]
+                    to_acc = accounts[acc_options.index(to_acc_display)]
+                    
                     transfer_note = f"[Chuyển tiền] {t_note}" if t_note else "[Chuyển tiền]"
-                    row_out = [str(t_date), "Chuyển tiền (Ra)", f"{transfer_note} sang {to_acc}", t_amount, "Bill", from_acc]
-                    row_in = [str(t_date), "Chuyển tiền (Vào)", f"{transfer_note} từ {from_acc}", t_amount, "Bill", to_acc]
+                    row_out = [str(t_date), "Chuyển tiền (Ra)", f"{transfer_note} sang {to_acc}", t_amount, spender, from_acc]
+                    row_in = [str(t_date), "Chuyển tiền (Vào)", f"{transfer_note} từ {from_acc}", t_amount, spender, to_acc]
                     sheet.append_rows([row_out, row_in])
                     st.success("✅ Đã chuyển thành công!")
                     st.rerun()
@@ -424,10 +447,10 @@ try:
                 # Cột 4: Nút Sửa
                 if c4.button("✏️", key=f"edit_{sheet_row_idx}"):
                     if not is_merged:
-                        edit_dialog(row, sheet_row_idx)
+                        edit_dialog(row, sheet_row_idx, current_user if current_user else row['Người chi'], debt_label)
                     else:
                         sibling_idx = int(recent_df.index[i+1]) + 2
-                        edit_dialog(row, sheet_row_idx, is_transfer=True, sibling_row_idx=sibling_idx, sibling_data=recent_df.iloc[i+1])
+                        edit_dialog(row, sheet_row_idx, current_user if current_user else row['Người chi'], debt_label, is_transfer=True, sibling_row_idx=sibling_idx, sibling_data=recent_df.iloc[i+1])
 
                 # Cột 5: Nút xóa
                 if c5.button("❌", key=f"del_{sheet_row_idx}"):
