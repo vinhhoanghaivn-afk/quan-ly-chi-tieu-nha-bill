@@ -327,10 +327,8 @@ try:
         else:
             st.info("Chưa có dữ liệu.")
 
-    with tab3:
-        if current_user == "All":
-            st.warning("⚠️ Vui lòng chọn tài khoản cụ thể (Bill, Tracy hoặc Chung) để nhập giao dịch.")
-        else:
+    if current_user != "All":
+        with tab3:
             with st.form("input_form", clear_on_submit=True):
                 st.subheader(f"📝 Nhập cho: {view_mode}")
                 date = st.date_input("Ngày", datetime.date.today())
@@ -355,10 +353,7 @@ try:
                     st.success("✅ Đã lưu thành công!")
                     st.rerun()
 
-    with tab4:
-        if current_user == "All":
-            st.warning("⚠️ Vui lòng chọn tài khoản cụ thể để thực hiện chuyển khoản.")
-        else:
+        with tab4:
             st.subheader(f"💸 Chuyển khoản nội bộ ({current_user})")
             with st.form("transfer_form", clear_on_submit=True):
                 t_date = st.date_input("Ngày chuyển", datetime.date.today())
